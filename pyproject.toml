@@ -1,0 +1,10 @@
+[project]
+name = "django-test"
+version = "0.1.0"
+description = "Django + Inertia.js + Vue monorepo"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "django>=6.0.1",
+    "inertia-django>=1.2.0",
+]
+
