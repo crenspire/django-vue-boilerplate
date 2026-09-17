@@ -1,100 +1,125 @@
 # Django Inertia Vue shadcn Starter Kit
 
-A modern, open-source starter for full-stack web apps: **Django** on the backend, **Inertia.js** + **Vue 3** + **Vite** on the frontend, and **shadcn-vue** for UI components. No separate SPA deployment—one Django app, one codebase.
+A modern full-stack starter: **Django 6** on the backend, **Inertia.js v3 + Vue 3 + Vite** on the frontend, and a polished **shadcn-vue** admin out of the box. One codebase, one server, no separate API or SPA to deploy.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-dark.png">
+  <img alt="Admin dashboard with an inset sidebar, stat cards, recent sign-ups and groups overview" src="docs/screenshots/dashboard-light.png">
+</picture>
 
 ## Features
 
-- **Django 6** – Backend, auth, and API
-- **Inertia.js** – SPA-like UX without a separate frontend API; server-side routing, shared auth
-- **Vue 3** (Composition API, `<script setup>`) – Reactive UI
-- **Vite** – Fast dev server and builds
-- **shadcn-vue** – Accessible, customizable components (Button, Card, Dialog, Table, etc.)
-- **Tailwind CSS** – Utility-first styling with dark mode
-- **Included admin** – User & group CRUD with Inertia/Vue (plus classic Django admin at `/django-admin/`)
-
-## Quick start
-
-### Prerequisites
-
-- Python 3.11+ (e.g. [uv](https://github.com/astral-sh/uv) or `pyenv`)
-- Node.js 18+
-
-### Run the app
-
-1. **Backend** (from repo root):
-
-   ```bash
-   uv run python starterkit/manage.py runserver
-   ```
-
-2. **Frontend** (Vite dev server in another terminal):
-
-   ```bash
-   cd starterkit/frontend
-   npm install
-   npm run dev
-   ```
-
-3. Open **http://127.0.0.1:8000** for the landing page, or **http://127.0.0.1:8000/admin/login/** to sign in. Create a staff user via Django shell or `/django-admin/` if needed.
-
-### Routes
-
-| Path | Description |
-|------|-------------|
-| `/` | Landing page (hero, features, footer) |
-| `/admin/login/` | Admin login |
-| `/admin/` | Dashboard (requires login) |
-| `/admin/users/`, `/admin/groups/` | User & group management |
-| `/django-admin/` | Classic Django admin |
+- **Django 6** with a custom user model, environment-based settings and production security defaults
+- **Inertia.js v3**: server-side routing and auth with an SPA feel; Django messages show up as toasts
+- **Vue 3 + Vite 8** with hot reload in development and hashed, cache-busted bundles in production (via django-vite)
+- **shadcn-vue admin** built from shadcn's own blocks: inset collapsible sidebar, breadcrumbs, <kbd>⌘K</kbd> command menu, data tables, light/dark/system themes, and a mobile slide-out sidebar
+- **User & group management** with search, sorting, pagination, and permission-aware forms
+- **Safe permissions** that mirror Django admin, plus guards against privilege escalation ([details](docs/permissions.md))
+- **Tested**: 60 backend tests covering services, selectors, views and permissions
+- **Demo data** in one command (`seed_demo`) to explore the admin immediately
 
 ## Screenshots
 
-### Landing page
+| Sign in | Users |
+|---------|-------|
+| ![Sign-in page with a two-column card](docs/screenshots/login-light.png) | ![Users data table with avatars, status badges and pagination](docs/screenshots/users-light.png) |
+| **Edit user** | **Group permissions** |
+| ![User form with profile, access and group cards](docs/screenshots/user-edit-light.png) | ![Group form with permissions grouped by app](docs/screenshots/group-edit-light.png) |
+| **Command menu (⌘K)** | **Collapsed sidebar (⌘B)** |
+| ![Command menu filtering actions in dark mode](docs/screenshots/command-menu-dark.png) | ![Sidebar collapsed to icons](docs/screenshots/sidebar-collapsed-light.png) |
 
-| Light | Dark |
-|-------|------|
-| ![Landing page (light)](starterkit/static_assets/home-light.png) | ![Landing page (dark)](starterkit/static_assets/home.png) |
+<details>
+<summary><strong>Mobile</strong></summary>
+<br>
 
-### Admin dashboard
+<p>
+  <img src="docs/screenshots/mobile-login.png" width="24%" alt="Mobile sign-in">
+  <img src="docs/screenshots/mobile-dashboard.png" width="24%" alt="Mobile dashboard">
+  <img src="docs/screenshots/mobile-sidebar.png" width="24%" alt="Mobile sidebar sheet">
+  <img src="docs/screenshots/mobile-users.png" width="24%" alt="Mobile users list in dark mode">
+</p>
+</details>
 
-| Light | Dark |
-|-------|------|
-| ![Admin dashboard (light)](starterkit/static_assets/dashboard.png) | ![Admin dashboard (dark)](starterkit/static_assets/dashboard-dark.png) |
+<details>
+<summary><strong>Dark mode, landing page and limited-permission view</strong></summary>
+<br>
 
-### Users
+| Users (dark) | Sign in (dark) |
+|--------------|----------------|
+| ![Users table in dark mode](docs/screenshots/users-dark.png) | ![Sign-in page in dark mode](docs/screenshots/login-dark.png) |
+| **Landing page** | **Staff user without group permissions** |
+| ![Landing page](docs/screenshots/landing-light.png) | ![Dashboard showing only user sections](docs/screenshots/manager-dashboard-light.png) |
+</details>
 
-**List**
+## Quick start
 
-![Users list](starterkit/static_assets/user-list.png)
+Requires **Python 3.13** with [uv](https://docs.astral.sh/uv/), and **Node.js** `^20.19` or `>=22.12`.
 
-**Create**
+```bash
+git clone https://github.com/crenspire/django-vue-boilerplate.git
+cd django-vue-boilerplate
 
-![User create form](starterkit/static_assets/user-create.png)
+uv sync
+uv run python starterkit/manage.py migrate
+uv run python starterkit/manage.py seed_demo      # or: createsuperuser
+uv run python starterkit/manage.py runserver
+```
+
+In a second terminal:
+
+```bash
+cd starterkit/frontend
+npm install
+npm run dev
+```
+
+Open **http://127.0.0.1:8000/admin/** and sign in as `admin` / `demo-password-123`.
+
+## Documentation
+
+| | |
+|---|---|
+| [Getting started](docs/getting-started.md) | Setup, demo data, shortcuts, troubleshooting |
+| [Architecture](docs/architecture.md) | Request flow, backend layers, shared props, flash messages |
+| [Frontend & UI](docs/frontend.md) | Layouts, shadcn-vue components, theming, navigation, tables |
+| [Permissions](docs/permissions.md) | Access rules and escalation guards |
+| [Tutorial: adding an admin page](docs/guides/adding-an-admin-page.md) | Build a new page end to end |
+| [Testing](docs/testing.md) | Running and writing tests |
+| [Deployment](docs/deployment.md) | Environment variables, builds, production checklist |
+
+## Tech stack
+
+| Layer | Tools |
+|-------|-------|
+| Backend | Django 6, inertia-django 2, django-vite 3, SQLite (swap for Postgres) |
+| Frontend | Vue 3, @inertiajs/vue3 3, Vite 8, Tailwind CSS 3 |
+| UI | shadcn-vue (reka-ui), lucide icons, vue-sonner, Geist font |
+| Tooling | uv, npm |
 
 ## Project structure
 
 ```
 starterkit/
-├── main/                 # Django project (settings, urls, middleware)
+├── main/              # settings, urls, shared Inertia props
 ├── apps/
-│   ├── users/            # User model & auth
-│   └── admin_panel/      # Inertia admin (views, services, selectors)
-├── frontend/             # Vue + Vite + Inertia
-│   ├── Pages/            # Inertia pages (Admin/*, Auth/*, Home.vue)
-│   ├── Layouts/          # AdminLayout, AuthLayout
-│   ├── Components/       # ui/* (shadcn), admin/*
-│   └── app.js            # Inertia app entry
-├── static_assets/        # Static files (icon, screenshots) – served at /static/
-├── templates/            # Django base template (Inertia mount)
-└── manage.py
+│   ├── users/         # custom User model
+│   └── admin_panel/   # api/ domain/ forms/ services/ selectors/ dto/ tests/
+├── frontend/
+│   ├── Pages/         # Inertia pages (Admin/*, Auth/*, Home.vue)
+│   ├── Layouts/       # AdminLayout, AuthLayout
+│   ├── Components/    # ui/* (shadcn-vue) and admin/* (sidebar, header, forms, tables)
+│   └── composables/   # navigation, theme, list query state
+├── templates/         # base.html (Inertia mount + django-vite tags)
+└── static_assets/     # favicon and other static files
+docs/                  # guides and README screenshots
 ```
 
-## Tests
+## Running tests
 
 ```bash
-uv run python starterkit/manage.py test apps.admin_panel.tests
+uv run python starterkit/manage.py test apps
 ```
 
 ## License
 
-MIT. Use this starter for personal or commercial projects.
+[MIT](LICENSE) — free for personal and commercial projects.
