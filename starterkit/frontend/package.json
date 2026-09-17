@@ -1,33 +1,35 @@
 {
-  "name": "frontend",
+  "name": "django-inertia-vue-shadcn-frontend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "preview": "vite preview"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "@inertiajs/inertia": "^0.11.1",
-    "@inertiajs/inertia-vue3": "^0.6.0",
-    "@vitejs/plugin-vue": "^6.0.3",
+    "@fontsource-variable/geist": "^5.3.0",
+    "@inertiajs/vue3": "^3.7.1",
+    "@vueuse/core": "^15.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-vue-next": "^0.563.0",
-    "reka-ui": "^2.8.0",
+    "reka-ui": "^2.10.4",
     "tailwind-merge": "^3.4.0",
-    "vite": "^7.3.1",
-    "vue": "^3.5.27"
+    "vue": "^3.5.27",
+    "vue-sonner": "^2.0.9"
   },
   "devDependencies": {
-    "autoprefixer": "^10.4.24",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.17",
-    "tailwindcss-animate": "^1.0.7"
+    "@vitejs/plugin-vue": "^6.0.9",
+    "autoprefixer": "^10.6.1",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^3.4.19",
+    "tailwindcss-animate": "^1.0.7",
+    "vite": "^8.3.0"
   }
 }

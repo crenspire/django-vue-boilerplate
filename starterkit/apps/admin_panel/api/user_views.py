@@ -1,226 +1,153 @@
 import dataclasses
-from django.contrib.auth.decorators import login_required, user_passes_test
+
+from django.contrib import messages
 from django.http import HttpRequest, HttpResponseRedirect
-from django.urls import reverse
+from django.shortcuts import redirect
+from django.views.decorators.http import require_http_methods, require_POST
 from inertia import render
 
-from apps.admin_panel.api.request_utils import get_request_data
-from apps.admin_panel.domain.policies import can_manage_users
+from apps.admin_panel.api.request_utils import (
+    admin_view,
+    get_request_data,
+    parse_bool,
+    parse_id_list,
+    parse_list_params,
+    parse_str,
+)
+from apps.admin_panel.domain.grants import assignable_group_ids
+from apps.admin_panel.domain.policies import (
+    can_add_users,
+    can_change_users,
+    can_delete_user,
+    can_edit_user,
+    can_grant_superuser,
+    can_view_users,
+)
 from apps.admin_panel.dto.users import UserFormInputDTO
 from apps.admin_panel.selectors.groups import get_groups_choices
-from apps.admin_panel.selectors.users import get_user_detail_dto, get_user_list_page
-from apps.admin_panel.services.users import (
-    create_user_service,
-    delete_user_service,
-    update_user_service,
-)
-from main.middleware import get_auth_props
+from apps.admin_panel.selectors.users import get_user_by_id, get_user_detail_dto, get_user_list_page
+from apps.admin_panel.services.users import create_user_service, delete_user_service, update_user_service
+
+ALLOWED_USER_ORDER_FIELDS = {
+    "username", "-username", "email", "-email", "is_staff", "-is_staff", "is_active", "-is_active",
+    "is_superuser", "-is_superuser", "date_joined", "-date_joined", "last_login", "-last_login",
+}
+
+EMPTY_FORM = {
+    "username": "",
+    "email": "",
+    "first_name": "",
+    "last_name": "",
+    "is_staff": False,
+    "is_superuser": False,
+    "is_active": True,
+    "group_ids": [],
+    "password": "",
+}
 
 
-def _parse_user_form_data(request: HttpRequest) -> dict:
+def _parse_user_form(request: HttpRequest) -> UserFormInputDTO:
     data = get_request_data(request)
-    group_ids = data.get("group_ids")
-    if not isinstance(group_ids, list):
-        group_ids = [group_ids] if group_ids is not None and group_ids != "" else []
-    group_ids = [int(x) for x in group_ids if str(x).isdigit()]
+    password = data.get("password")
+    return UserFormInputDTO(
+        username=parse_str(data, "username"),
+        email=parse_str(data, "email"),
+        first_name=parse_str(data, "first_name"),
+        last_name=parse_str(data, "last_name"),
+        is_staff=parse_bool(data, "is_staff"),
+        is_superuser=parse_bool(data, "is_superuser"),
+        is_active=parse_bool(data, "is_active", default=True),
+        group_ids=parse_id_list(data, "group_ids"),
+        password=password if isinstance(password, str) and password else None,
+    )
+
+
+def _form_props(request: HttpRequest, form: dict, errors: dict, *, is_self: bool = False) -> dict:
     return {
-        "username": (data.get("username") or "").strip(),
-        "email": (data.get("email") or "").strip(),
-        "first_name": (data.get("first_name") or "").strip(),
-        "last_name": (data.get("last_name") or "").strip(),
-        "is_staff": data.get("is_staff") in (True, "true", "on", 1, "1"),
-        "is_superuser": data.get("is_superuser") in (True, "true", "on", 1, "1"),
-        "is_active": data.get("is_active") not in (False, "false", 0, "0"),
-        "group_ids": group_ids,
-        "password": data.get("password") or None,
+        # The password is never echoed back to the client.
+        "form": {**form, "password": ""},
+        "errors": errors,
+        "groups_choices": get_groups_choices(assignable_group_ids(request.user)),
+        "can_grant_superuser": can_grant_superuser(request.user),
+        "is_self": is_self,
     }
 
 
-ALLOWED_USER_ORDER_FIELDS = {"username", "-username", "email", "-email", "is_staff", "-is_staff", "is_active", "-is_active", "is_superuser", "-is_superuser"}
-
-
-@login_required
-@user_passes_test(can_manage_users)
+@admin_view(can_view_users)
 def user_list(request: HttpRequest):
-    search = request.GET.get("search", "").strip() or None
-    page = max(1, int(request.GET.get("page", 1)))
-    page_size = max(1, min(100, int(request.GET.get("page_size", 25))))
-    order_by = request.GET.get("order_by", "username")
-    if order_by not in ALLOWED_USER_ORDER_FIELDS:
-        order_by = "username"
-    items, total = get_user_list_page(search=search, order_by=order_by, page=page, page_size=page_size)
+    params = parse_list_params(request, allowed_order=ALLOWED_USER_ORDER_FIELDS, default_order="username")
+    items, pagination = get_user_list_page(**params)
     return render(
         request,
         "Admin/Users/Index",
         {
-            "auth": get_auth_props(request),
-            "users": [dataclasses.asdict(u) for u in items],
-            "pagination": {
-                "page": page,
-                "page_size": page_size,
-                "total": total,
-                "total_pages": (total + page_size - 1) // page_size if total else 0,
-            },
-            "filters": {"search": search or "", "order_by": order_by},
+            "users": [
+                {
+                    **dataclasses.asdict(u),
+                    "can_edit": can_edit_user(request.user, u),
+                    "can_delete": can_delete_user(request.user, u),
+                }
+                for u in items
+            ],
+            "pagination": dataclasses.asdict(pagination),
+            "filters": {"search": params["search"] or "", "order_by": params["order_by"]},
         },
     )
 
 
-@login_required
-@user_passes_test(can_manage_users)
+@admin_view(can_add_users)
+@require_http_methods(["GET", "POST"])
 def user_create(request: HttpRequest):
     if request.method == "POST":
-        fd = _parse_user_form_data(request)
-        dto = UserFormInputDTO(
-            username=fd["username"],
-            email=fd["email"],
-            first_name=fd["first_name"],
-            last_name=fd["last_name"],
-            is_staff=fd["is_staff"],
-            is_superuser=fd["is_superuser"],
-            is_active=fd["is_active"],
-            group_ids=fd["group_ids"],
-            password=fd["password"],
-        )
+        dto = _parse_user_form(request)
         result = create_user_service(dto, request)
-        if result.success and result.user_id:
-            return HttpResponseRedirect(reverse("admin_user_edit", kwargs={"user_id": result.user_id}))
-        return render(
-            request,
-            "Admin/Users/Create",
-            {
-                "auth": get_auth_props(request),
-                "form": {
-                    "username": dto.username,
-                    "email": dto.email,
-                    "first_name": dto.first_name,
-                    "last_name": dto.last_name,
-                    "is_staff": dto.is_staff,
-                    "is_superuser": dto.is_superuser,
-                    "is_active": dto.is_active,
-                    "group_ids": dto.group_ids,
-                    "password": "",
-                },
-                "errors": result.errors,
-                "groups_choices": get_groups_choices(),
-            },
-        )
+        if result.success:
+            messages.success(request, f"User “{dto.username}” was created.")
+            return redirect("admin_user_edit", user_id=result.user_id)
+        return render(request, "Admin/Users/Create", _form_props(request, dataclasses.asdict(dto), result.errors))
 
-    return render(
-        request,
-        "Admin/Users/Create",
-        {
-            "auth": get_auth_props(request),
-            "form": {
-                "username": "",
-                "email": "",
-                "first_name": "",
-                "last_name": "",
-                "is_staff": False,
-                "is_superuser": False,
-                "is_active": True,
-                "group_ids": [],
-                "password": "",
-            },
-            "errors": {},
-            "groups_choices": get_groups_choices(),
-        },
-    )
+    return render(request, "Admin/Users/Create", _form_props(request, EMPTY_FORM, {}))
 
 
-@login_required
-@user_passes_test(can_manage_users)
+@admin_view(can_change_users)
+@require_http_methods(["GET", "POST"])
 def user_edit(request: HttpRequest, user_id: int):
+    target = get_user_by_id(user_id)
+    if not target:
+        messages.error(request, "That user no longer exists.")
+        return redirect("admin_users")
+    if not can_edit_user(request.user, target):
+        messages.error(request, "Only superusers can edit superuser accounts.")
+        return redirect("admin_users")
+
+    is_self = target.pk == request.user.pk
     detail = get_user_detail_dto(user_id)
-    if not detail:
-        return HttpResponseRedirect(reverse("admin_users"))
+    extra = {
+        "user": dataclasses.asdict(detail),
+        "can_delete": can_delete_user(request.user, target),
+    }
 
     if request.method == "POST":
-        fd = _parse_user_form_data(request)
-        dto = UserFormInputDTO(
-            username=fd["username"],
-            email=fd["email"],
-            first_name=fd["first_name"],
-            last_name=fd["last_name"],
-            is_staff=fd["is_staff"],
-            is_superuser=fd["is_superuser"],
-            is_active=fd["is_active"],
-            group_ids=fd["group_ids"],
-            password=fd["password"],
-        )
+        dto = _parse_user_form(request)
         result = update_user_service(user_id, dto, request)
         if result.success:
-            return HttpResponseRedirect(reverse("admin_user_edit", kwargs={"user_id": user_id}))
-        return render(
-            request,
-            "Admin/Users/Edit",
-            {
-                "auth": get_auth_props(request),
-                "user": _detail_to_form(detail),
-                "form": {
-                    "username": dto.username,
-                    "email": dto.email,
-                    "first_name": dto.first_name,
-                    "last_name": dto.last_name,
-                    "is_staff": dto.is_staff,
-                    "is_superuser": dto.is_superuser,
-                    "is_active": dto.is_active,
-                    "group_ids": dto.group_ids,
-                    "password": "",
-                },
-                "errors": result.errors,
-                "groups_choices": get_groups_choices(),
-            },
-        )
+            messages.success(request, f"User “{dto.username}” was saved.")
+            return redirect("admin_user_edit", user_id=user_id)
+        props = _form_props(request, dataclasses.asdict(dto), result.errors, is_self=is_self)
+        return render(request, "Admin/Users/Edit", {**props, **extra})
 
-    return render(
-        request,
-        "Admin/Users/Edit",
-        {
-            "auth": get_auth_props(request),
-            "user": _detail_to_form(detail),
-            "form": {
-                "username": detail.username,
-                "email": detail.email,
-                "first_name": detail.first_name,
-                "last_name": detail.last_name,
-                "is_staff": detail.is_staff,
-                "is_superuser": detail.is_superuser,
-                "is_active": detail.is_active,
-                "group_ids": detail.group_ids,
-                "password": "",
-            },
-            "errors": {},
-            "groups_choices": get_groups_choices(),
-        },
-    )
+    form = {k: v for k, v in dataclasses.asdict(detail).items() if k in EMPTY_FORM}
+    return render(request, "Admin/Users/Edit", {**_form_props(request, form, {}, is_self=is_self), **extra})
 
 
-@login_required
-@user_passes_test(can_manage_users)
+@admin_view(can_view_users)
+@require_POST
 def user_delete(request: HttpRequest, user_id: int):
-    if request.method != "POST":
-        return HttpResponseRedirect(reverse("admin_users"))
+    target = get_user_by_id(user_id)
     result = delete_user_service(user_id, request)
     if result.success:
-        return HttpResponseRedirect(reverse("admin_users"))
-    return render(
-        request,
-        "Admin/Users/Index",
-        {"auth": get_auth_props(request), "errors": result.errors, "users": [], "pagination": {"page": 1, "page_size": 25, "total": 0, "total_pages": 0}, "filters": {}},
-    )
-
-
-def _detail_to_form(detail):
-    return {
-        "id": detail.id,
-        "username": detail.username,
-        "email": detail.email,
-        "first_name": detail.first_name,
-        "last_name": detail.last_name,
-        "is_staff": detail.is_staff,
-        "is_superuser": detail.is_superuser,
-        "is_active": detail.is_active,
-        "group_ids": detail.group_ids,
-        "group_names": detail.group_names,
-    }
+        messages.success(request, f"User “{target.username}” was deleted.")
+    else:
+        for message in result.errors.get("non_field_errors", []):
+            messages.error(request, message)
+    return redirect("admin_users")

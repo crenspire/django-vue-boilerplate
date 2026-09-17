@@ -1,22 +1,25 @@
 <script setup>
-import { Label as LabelPrimitive } from "reka-ui"
-import { cn } from "@/lib/utils"
+import { reactiveOmit } from "@vueuse/core";
+import { Label } from "reka-ui";
+import { cn } from "@/lib/utils";
 
 const props = defineProps({
-  for: {
-    type: String,
-    default: undefined,
-  },
+  for: { type: String, required: false },
+  asChild: { type: Boolean, required: false },
+  as: { type: null, required: false },
   class: {
-    type: [String, Array, Object],
-    default: "",
+    type: [Boolean, null, String, Object, Array],
+    required: false,
+    skipCheck: true,
   },
-})
+});
+
+const delegatedProps = reactiveOmit(props, "class");
 </script>
 
 <template>
-  <LabelPrimitive
-    :for="props.for"
+  <Label
+    v-bind="delegatedProps"
     :class="
       cn(
         'text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70',
@@ -25,5 +28,5 @@ const props = defineProps({
     "
   >
     <slot />
-  </LabelPrimitive>
+  </Label>
 </template>

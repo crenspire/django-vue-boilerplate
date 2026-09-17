@@ -38,6 +38,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .vite/
+starterkit/frontend/dist/
+# Legacy Vite output location (pre django-vite)
 starterkit/static/
 
 # IDE

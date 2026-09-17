@@ -1,15 +1,15 @@
-{% load static %}
+{% load static django_vite %}
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" type="image/svg+xml" href="{% static 'icon.svg' %}" />
-  <title>Admin</title>
-  {% block inertia_head %}{% endblock inertia_head %}
+  <title>Django Inertia Vue</title>
+  {% vite_hmr_client %}
+  {% vite_asset 'app.js' %}
 </head>
 <body>
   {% block inertia %}{% endblock inertia %}
-  <!-- Vite dev server entry for Vue/Inertia app -->
-  <script type="module" src="http://localhost:5173/app.js"></script>
 </body>
 </html>

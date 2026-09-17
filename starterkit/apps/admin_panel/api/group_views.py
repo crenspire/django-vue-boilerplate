@@ -1,168 +1,97 @@
 import dataclasses
-from django.contrib.auth.decorators import login_required, user_passes_test
-from django.http import HttpRequest, HttpResponseRedirect
-from django.urls import reverse
+
+from django.contrib import messages
+from django.http import HttpRequest
+from django.shortcuts import redirect
+from django.views.decorators.http import require_http_methods, require_POST
 from inertia import render
 
-from apps.admin_panel.api.request_utils import get_request_data
-from apps.admin_panel.domain.policies import can_manage_groups
+from apps.admin_panel.api.request_utils import admin_view, get_request_data, parse_id_list, parse_list_params, parse_str
+from apps.admin_panel.domain.grants import grantable_permission_ids
+from apps.admin_panel.domain.policies import can_add_groups, can_change_groups, can_view_groups
 from apps.admin_panel.dto.groups import GroupFormInputDTO
 from apps.admin_panel.selectors.groups import (
     get_all_permissions_choices,
+    get_group_by_id,
     get_group_detail_dto,
     get_group_list_page,
 )
-from apps.admin_panel.services.groups import (
-    create_group_service,
-    delete_group_service,
-    update_group_service,
-)
-from main.middleware import get_auth_props
-
-
-def _parse_group_form_data(request: HttpRequest) -> dict:
-    data = get_request_data(request)
-    permission_ids = data.get("permission_ids")
-    if not isinstance(permission_ids, list):
-        permission_ids = [permission_ids] if permission_ids is not None and permission_ids != "" else []
-    permission_ids = [int(x) for x in permission_ids if str(x).isdigit()]
-    return {
-        "name": (data.get("name") or "").strip(),
-        "permission_ids": permission_ids,
-    }
-
+from apps.admin_panel.services.groups import create_group_service, delete_group_service, update_group_service
 
 ALLOWED_GROUP_ORDER_FIELDS = {"name", "-name", "user_count", "-user_count", "permission_count", "-permission_count"}
 
 
-@login_required
-@user_passes_test(can_manage_groups)
+def _parse_group_form(request: HttpRequest) -> GroupFormInputDTO:
+    data = get_request_data(request)
+    return GroupFormInputDTO(name=parse_str(data, "name"), permission_ids=parse_id_list(data, "permission_ids"))
+
+
+def _form_props(request: HttpRequest, form: dict, errors: dict) -> dict:
+    return {
+        "form": form,
+        "errors": errors,
+        "permissions_choices": get_all_permissions_choices(grantable_permission_ids(request.user)),
+    }
+
+
+@admin_view(can_view_groups)
 def group_list(request: HttpRequest):
-    search = request.GET.get("search", "").strip() or None
-    page = max(1, int(request.GET.get("page", 1)))
-    page_size = max(1, min(100, int(request.GET.get("page_size", 25))))
-    order_by = request.GET.get("order_by", "name")
-    if order_by not in ALLOWED_GROUP_ORDER_FIELDS:
-        order_by = "name"
-    items, total = get_group_list_page(search=search, order_by=order_by, page=page, page_size=page_size)
+    params = parse_list_params(request, allowed_order=ALLOWED_GROUP_ORDER_FIELDS, default_order="name")
+    items, pagination = get_group_list_page(**params)
     return render(
         request,
         "Admin/Groups/Index",
         {
-            "auth": get_auth_props(request),
             "groups": [dataclasses.asdict(g) for g in items],
-            "pagination": {
-                "page": page,
-                "page_size": page_size,
-                "total": total,
-                "total_pages": (total + page_size - 1) // page_size if total else 0,
-            },
-            "filters": {"search": search or "", "order_by": order_by},
+            "pagination": dataclasses.asdict(pagination),
+            "filters": {"search": params["search"] or "", "order_by": params["order_by"]},
         },
     )
 
 
-@login_required
-@user_passes_test(can_manage_groups)
+@admin_view(can_add_groups)
+@require_http_methods(["GET", "POST"])
 def group_create(request: HttpRequest):
     if request.method == "POST":
-        fd = _parse_group_form_data(request)
-        dto = GroupFormInputDTO(
-            name=fd["name"],
-            permission_ids=fd["permission_ids"],
-        )
+        dto = _parse_group_form(request)
         result = create_group_service(dto, request)
-        if result.success and result.group_id:
-            return HttpResponseRedirect(reverse("admin_group_edit", kwargs={"group_id": result.group_id}))
-        return render(
-            request,
-            "Admin/Groups/Create",
-            {
-                "auth": get_auth_props(request),
-                "form": {"name": dto.name, "permission_ids": dto.permission_ids},
-                "errors": result.errors,
-                "permissions_choices": _permissions_choices(),
-            },
-        )
+        if result.success:
+            messages.success(request, f"Group “{dto.name}” was created.")
+            return redirect("admin_group_edit", group_id=result.group_id)
+        return render(request, "Admin/Groups/Create", _form_props(request, dataclasses.asdict(dto), result.errors))
 
-    return render(
-        request,
-        "Admin/Groups/Create",
-        {
-            "auth": get_auth_props(request),
-            "form": {"name": "", "permission_ids": []},
-            "errors": {},
-            "permissions_choices": _permissions_choices(),
-        },
-    )
+    return render(request, "Admin/Groups/Create", _form_props(request, {"name": "", "permission_ids": []}, {}))
 
 
-@login_required
-@user_passes_test(can_manage_groups)
+@admin_view(can_change_groups)
+@require_http_methods(["GET", "POST"])
 def group_edit(request: HttpRequest, group_id: int):
     detail = get_group_detail_dto(group_id)
     if not detail:
-        return HttpResponseRedirect(reverse("admin_groups"))
+        messages.error(request, "That group no longer exists.")
+        return redirect("admin_groups")
 
     if request.method == "POST":
-        fd = _parse_group_form_data(request)
-        dto = GroupFormInputDTO(
-            name=fd["name"],
-            permission_ids=fd["permission_ids"],
-        )
+        dto = _parse_group_form(request)
         result = update_group_service(group_id, dto, request)
         if result.success:
-            return HttpResponseRedirect(reverse("admin_group_edit", kwargs={"group_id": group_id}))
-        return render(
-            request,
-            "Admin/Groups/Edit",
-            {
-                "auth": get_auth_props(request),
-                "group": _detail_to_form(detail),
-                "form": {"name": dto.name, "permission_ids": dto.permission_ids},
-                "errors": result.errors,
-                "permissions_choices": _permissions_choices(),
-            },
-        )
+            messages.success(request, f"Group “{dto.name}” was saved.")
+            return redirect("admin_group_edit", group_id=group_id)
+        props = _form_props(request, dataclasses.asdict(dto), result.errors)
+        return render(request, "Admin/Groups/Edit", {**props, "group": dataclasses.asdict(detail)})
 
-    return render(
-        request,
-        "Admin/Groups/Edit",
-        {
-            "auth": get_auth_props(request),
-            "group": _detail_to_form(detail),
-            "form": {"name": detail.name, "permission_ids": detail.permission_ids},
-            "errors": {},
-            "permissions_choices": _permissions_choices(),
-        },
-    )
+    form = {"name": detail.name, "permission_ids": detail.permission_ids}
+    return render(request, "Admin/Groups/Edit", {**_form_props(request, form, {}), "group": dataclasses.asdict(detail)})
 
 
-@login_required
-@user_passes_test(can_manage_groups)
+@admin_view(can_view_groups)
+@require_POST
 def group_delete(request: HttpRequest, group_id: int):
-    if request.method != "POST":
-        return HttpResponseRedirect(reverse("admin_groups"))
+    group = get_group_by_id(group_id)
     result = delete_group_service(group_id, request)
     if result.success:
-        return HttpResponseRedirect(reverse("admin_groups"))
-    return render(
-        request,
-        "Admin/Groups/Index",
-        {"auth": get_auth_props(request), "errors": result.errors, "groups": [], "pagination": {"page": 1, "page_size": 25, "total": 0, "total_pages": 0}, "filters": {}},
-    )
-
-
-def _permissions_choices():
-    return [{"id": pid, "codename": cname} for pid, cname in get_all_permissions_choices()]
-
-
-def _detail_to_form(detail):
-    return {
-        "id": detail.id,
-        "name": detail.name,
-        "permission_ids": detail.permission_ids,
-        "permission_codenames": detail.permission_codenames,
-        "user_ids": detail.user_ids,
-        "user_usernames": detail.user_usernames,
-    }
+        messages.success(request, f"Group “{group.name}” was deleted.")
+    else:
+        for message in result.errors.get("non_field_errors", []):
+            messages.error(request, message)
+    return redirect("admin_groups")

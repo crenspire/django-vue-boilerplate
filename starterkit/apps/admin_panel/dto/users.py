@@ -6,10 +6,13 @@ from typing import List, Mapping, Sequence
 class UserListItemDTO:
     id: int
     username: str
+    full_name: str
     email: str
     is_staff: bool
     is_superuser: bool
     is_active: bool
+    date_joined: str
+    last_login: str | None
 
 
 @dataclass(frozen=True)
@@ -36,7 +39,7 @@ class UserFormInputDTO:
     is_superuser: bool
     is_active: bool
     group_ids: List[int]
-    password: str | None  # None = don't change; "" = clear; non-empty = set
+    password: str | None  # None or "" = leave unchanged (required on create)
 
 
 @dataclass(frozen=True)

@@ -1,7 +1,9 @@
 from django.contrib.auth import get_user_model
 from django.db.models import Q, QuerySet
 
+from apps.admin_panel.dto.common import PaginationDTO
 from apps.admin_panel.dto.users import UserDetailDTO, UserListItemDTO
+from apps.admin_panel.selectors.pagination import paginate
 
 User = get_user_model()
 
@@ -11,11 +13,15 @@ def get_users_queryset(
     search: str | None = None,
     order_by: str = "username",
 ) -> QuerySet:
-    qs = User.objects.all().order_by(order_by)
+    # `id` breaks ties so rows never shift between pages.
+    qs = User.objects.all().order_by(order_by, "id")
     if search and search.strip():
         term = search.strip()
         qs = qs.filter(
-            Q(username__icontains=term) | Q(email__icontains=term)
+            Q(username__icontains=term)
+            | Q(email__icontains=term)
+            | Q(first_name__icontains=term)
+            | Q(last_name__icontains=term)
         )
     return qs
 
@@ -24,25 +30,25 @@ def get_user_list_page(
     *,
     search: str | None = None,
     order_by: str = "username",
-    page: int = 1,
+    page: int | str | None = 1,
     page_size: int = 25,
-) -> tuple[list[UserListItemDTO], int]:
-    qs = get_users_queryset(search=search, order_by=order_by)
-    total = qs.count()
-    start = (page - 1) * page_size
-    rows = qs[start : start + page_size]
+) -> tuple[list[UserListItemDTO], PaginationDTO]:
+    rows, pagination = paginate(get_users_queryset(search=search, order_by=order_by), page=page, page_size=page_size)
     items = [
         UserListItemDTO(
             id=u.id,
             username=u.username,
+            full_name=u.get_full_name(),
             email=u.email or "",
             is_staff=u.is_staff,
             is_superuser=u.is_superuser,
             is_active=u.is_active,
+            date_joined=u.date_joined.isoformat(),
+            last_login=u.last_login.isoformat() if u.last_login else None,
         )
         for u in rows
     ]
-    return items, total
+    return items, pagination
 
 
 def get_user_by_id(user_id: int) -> User | None:
@@ -53,7 +59,7 @@ def get_user_detail_dto(user_id: int) -> UserDetailDTO | None:
     user = get_user_by_id(user_id)
     if not user:
         return None
-    groups = list(user.groups.all())
+    groups = list(user.groups.order_by("name"))
     return UserDetailDTO(
         id=user.id,
         username=user.username,

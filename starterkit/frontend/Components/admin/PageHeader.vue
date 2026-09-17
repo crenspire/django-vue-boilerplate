@@ -1,25 +1,20 @@
 <script setup>
-import { Link } from "@inertiajs/inertia-vue3"
+import { Head } from "@inertiajs/vue3"
 
 defineProps({
   title: { type: String, required: true },
-  breadcrumbs: { type: Array, default: () => [] },
+  description: { type: String, default: "" },
 })
 </script>
 
 <template>
-  <div class="flex items-center justify-between">
-    <div>
-      <nav v-if="breadcrumbs.length" class="flex items-center gap-1.5 text-sm text-muted-foreground mb-1">
-        <template v-for="(crumb, i) in breadcrumbs" :key="i">
-          <Link :href="crumb.href" class="hover:text-foreground transition-colors">{{ crumb.label }}</Link>
-          <span>/</span>
-        </template>
-        <span class="text-foreground">{{ title }}</span>
-      </nav>
-      <h1 class="text-2xl font-semibold tracking-tight">{{ title }}</h1>
+  <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <Head :title="title" />
+    <div class="min-w-0 space-y-1">
+      <h1 class="truncate text-2xl font-semibold tracking-tight">{{ title }}</h1>
+      <p v-if="description" class="text-sm text-muted-foreground">{{ description }}</p>
     </div>
-    <div class="flex items-center gap-2">
+    <div v-if="$slots.actions" class="flex shrink-0 items-center gap-2">
       <slot name="actions" />
     </div>
   </div>

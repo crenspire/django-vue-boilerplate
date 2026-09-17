@@ -1,26 +1,24 @@
 <script setup>
-import { computed } from "vue"
+import { computed, ref } from "vue"
+import { Link, router, usePage } from "@inertiajs/vue3"
+import { KeyRound, MoreHorizontal, Pencil, Plus, Shield, Trash2, Users } from "lucide-vue-next"
 import AdminLayout from "@/Layouts/AdminLayout.vue"
-import { Button } from "@/Components/ui/button"
 import { Badge } from "@/Components/ui/badge"
-import { Card, CardContent } from "@/Components/ui/card"
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/Components/ui/table"
-import { Alert, AlertDescription } from "@/Components/ui/alert"
+import { Button } from "@/Components/ui/button"
 import {
   DropdownMenu,
-  DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/Components/ui/dropdown-menu"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/Components/ui/table"
+import DataTablePagination from "@/Components/admin/DataTablePagination.vue"
+import DeleteConfirmDialog from "@/Components/admin/DeleteConfirmDialog.vue"
 import PageHeader from "@/Components/admin/PageHeader.vue"
 import SearchBar from "@/Components/admin/SearchBar.vue"
 import SortableHeader from "@/Components/admin/SortableHeader.vue"
-import DataTablePagination from "@/Components/admin/DataTablePagination.vue"
-import DeleteConfirmDialog from "@/Components/admin/DeleteConfirmDialog.vue"
-import { Link, useForm } from "@inertiajs/inertia-vue3"
-import { Inertia } from "@inertiajs/inertia"
-import { Plus, MoreHorizontal, Pencil, Trash2, AlertCircle } from "lucide-vue-next"
+import { useListQuery } from "@/composables/useListQuery"
 
 defineOptions({ layout: AdminLayout })
 
@@ -28,130 +26,127 @@ const props = defineProps({
   groups: { type: Array, default: () => [] },
   pagination: { type: Object, required: true },
   filters: { type: Object, default: () => ({}) },
-  errors: { type: Object, default: () => ({}) },
 })
 
-const searchForm = useForm({
-  search: props.filters?.search ?? "",
+const page = usePage()
+const can = computed(() => page.props.auth?.user?.permissions ?? {})
+const { search, orderBy, doSearch, clearSearch, sort, pageUrl } = useListQuery("/admin/groups/", props, "name")
+
+// A single dialog outside the dropdown menus (menu content unmounts on close).
+const pendingDelete = ref(null)
+const confirmOpen = computed({
+  get: () => pendingDelete.value !== null,
+  set: (open) => {
+    if (!open) pendingDelete.value = null
+  },
 })
-
-const currentOrderBy = computed(() => props.filters?.order_by ?? "name")
-
-function doSearch() {
-  Inertia.get("/admin/groups/", { search: searchForm.search, order_by: currentOrderBy.value }, { preserveState: true })
-}
-
-function clearSearch() {
-  Inertia.get("/admin/groups/", { order_by: currentOrderBy.value }, { preserveState: true })
-}
-
-function onSort(orderBy) {
-  Inertia.get("/admin/groups/", { search: props.filters?.search || "", order_by: orderBy }, { preserveState: true })
-}
-
-function buildPageUrl(page) {
-  const params = new URLSearchParams()
-  if (props.filters?.search) params.set("search", props.filters.search)
-  if (currentOrderBy.value) params.set("order_by", currentOrderBy.value)
-  params.set("page", page)
-  return `/admin/groups/?${params.toString()}`
-}
 </script>
 
 <template>
-  <div class="space-y-6">
-    <PageHeader title="Groups">
+  <div class="flex flex-col gap-6">
+    <PageHeader title="Groups" description="Bundle permissions into roles and assign them to users.">
       <template #actions>
-        <Link href="/admin/groups/create/">
-          <Button>
-            <Plus class="h-4 w-4 mr-2" />
+        <Button v-if="can.add_groups" as-child size="sm">
+          <Link href="/admin/groups/create/">
+            <Plus class="h-4 w-4" />
             Add group
-          </Button>
-        </Link>
+          </Link>
+        </Button>
       </template>
     </PageHeader>
 
-    <Alert v-if="errors?.non_field_errors?.length" variant="destructive">
-      <AlertCircle class="h-4 w-4" />
-      <AlertDescription>
-        <span v-for="(msg, i) in errors.non_field_errors" :key="i">{{ msg }}</span>
-      </AlertDescription>
-    </Alert>
+    <div class="flex flex-col gap-4">
+      <SearchBar v-model="search" placeholder="Search groups…" @search="doSearch" @clear="clearSearch" />
 
-    <Card>
-      <CardContent class="pt-6">
-        <div class="space-y-4">
-          <SearchBar
-            v-model="searchForm.search"
-            placeholder="Search group name..."
-            @search="doSearch"
-            @clear="clearSearch"
-          />
-
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>
-                  <SortableHeader field="name" :current-order-by="currentOrderBy" label="Name" @sort="onSort" />
-                </TableHead>
-                <TableHead>Users</TableHead>
-                <TableHead>Permissions</TableHead>
-                <TableHead class="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-if="!groups.length">
-                <TableCell colspan="4" class="text-center text-muted-foreground py-8">
-                  No groups found.
-                </TableCell>
-              </TableRow>
-              <TableRow v-for="g in groups" :key="g.id">
-                <TableCell class="font-medium">
-                  <Link :href="`/admin/groups/${g.id}/edit/`" class="hover:underline">
+      <div class="overflow-hidden rounded-lg border">
+        <Table>
+          <TableHeader class="bg-muted/50">
+            <TableRow class="hover:bg-transparent">
+              <TableHead class="pl-4">
+                <SortableHeader field="name" :current-order-by="orderBy" label="Name" @sort="sort" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader field="user_count" :current-order-by="orderBy" label="Members" @sort="sort" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader field="permission_count" :current-order-by="orderBy" label="Permissions" @sort="sort" />
+              </TableHead>
+              <TableHead class="w-12"><span class="sr-only">Actions</span></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow v-if="!groups.length" class="hover:bg-transparent">
+              <TableCell colspan="4" class="h-48">
+                <div class="flex flex-col items-center justify-center gap-2 text-center">
+                  <div class="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                    <Shield class="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <p class="text-sm font-medium">No groups found</p>
+                  <p class="text-sm text-muted-foreground">
+                    {{ filters.search ? "Try a different search term." : "Groups let you grant the same permissions to many users." }}
+                  </p>
+                </div>
+              </TableCell>
+            </TableRow>
+            <TableRow v-for="g in groups" :key="g.id">
+              <TableCell class="pl-4">
+                <div class="flex items-center gap-3">
+                  <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50">
+                    <Shield class="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <Link v-if="can.change_groups" :href="`/admin/groups/${g.id}/edit/`" class="font-medium hover:underline">
                     {{ g.name }}
                   </Link>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="secondary">{{ g.user_count }}</Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline">{{ g.permission_count }}</Badge>
-                </TableCell>
-                <TableCell class="text-right">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger>
-                      <Button variant="ghost" size="icon-sm">
-                        <MoreHorizontal class="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem class="cursor-pointer" @click="Inertia.visit(`/admin/groups/${g.id}/edit/`)">
-                        <Pencil class="h-4 w-4 mr-2" />
-                        Edit
+                  <span v-else class="font-medium">{{ g.name }}</span>
+                </div>
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline" class="gap-1 px-1.5 font-normal text-muted-foreground">
+                  <Users class="h-3.5 w-3.5" />
+                  {{ g.user_count }} {{ g.user_count === 1 ? "member" : "members" }}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline" class="gap-1 px-1.5 font-normal text-muted-foreground">
+                  <KeyRound class="h-3.5 w-3.5" />
+                  {{ g.permission_count }}
+                </Badge>
+              </TableCell>
+              <TableCell class="pr-4 text-right">
+                <DropdownMenu v-if="can.change_groups || can.delete_groups">
+                  <DropdownMenuTrigger as-child>
+                    <Button variant="ghost" size="icon" class="h-8 w-8 text-muted-foreground data-[state=open]:bg-muted" :aria-label="`Actions for ${g.name}`">
+                      <MoreHorizontal class="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" class="w-36">
+                    <DropdownMenuItem v-if="can.change_groups" @select="router.visit(`/admin/groups/${g.id}/edit/`)">
+                      <Pencil />
+                      Edit
+                    </DropdownMenuItem>
+                    <template v-if="can.delete_groups">
+                      <DropdownMenuSeparator v-if="can.change_groups" />
+                      <DropdownMenuItem class="text-destructive focus:text-destructive" @select="pendingDelete = g">
+                        <Trash2 />
+                        Delete
                       </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DeleteConfirmDialog
-                        :delete-url="`/admin/groups/${g.id}/delete/`"
-                        title="Delete group"
-                        :description="`Are you sure you want to delete '${g.name}'? This action cannot be undone.`"
-                      >
-                        <template #default="{ open }">
-                          <DropdownMenuItem class="text-destructive cursor-pointer" @click="open">
-                            <Trash2 class="h-4 w-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </template>
-                      </DeleteConfirmDialog>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
+                    </template>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </div>
 
-          <DataTablePagination :pagination="pagination" :build-url="buildPageUrl" />
-        </div>
-      </CardContent>
-    </Card>
+      <DataTablePagination :pagination="pagination" :build-url="pageUrl" />
+    </div>
+
+    <DeleteConfirmDialog
+      v-model:open="confirmOpen"
+      :delete-url="pendingDelete ? `/admin/groups/${pendingDelete.id}/delete/` : null"
+      title="Delete group?"
+      :description="`Members of '${pendingDelete?.name ?? ''}' will lose the permissions it grants. This action cannot be undone.`"
+    />
   </div>
 </template>

@@ -1,46 +1,66 @@
 <script setup>
-import { Link } from "@inertiajs/inertia-vue3"
+import { computed } from "vue"
+import { router } from "@inertiajs/vue3"
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-vue-next"
 import { Button } from "@/Components/ui/button"
-import { ChevronLeft, ChevronRight } from "lucide-vue-next"
+import { Label } from "@/Components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/Components/ui/select"
 
-defineProps({
+const props = defineProps({
   pagination: { type: Object, required: true },
   buildUrl: { type: Function, required: true },
+  pageSizes: { type: Array, default: () => [10, 25, 50, 100] },
 })
+
+const first = computed(() => (props.pagination.total ? (props.pagination.page - 1) * props.pagination.page_size + 1 : 0))
+const last = computed(() => Math.min(props.pagination.page * props.pagination.page_size, props.pagination.total))
+const totalPages = computed(() => Math.max(props.pagination.total_pages, 1))
+
+function go(page, extra = {}) {
+  router.visit(props.buildUrl(page, extra), { preserveScroll: true, preserveState: true })
+}
 </script>
 
 <template>
-  <div v-if="pagination.total_pages > 1" class="flex items-center justify-between px-2">
+  <div class="flex flex-col-reverse items-center justify-between gap-3 px-1 sm:flex-row">
     <p class="text-sm text-muted-foreground">
-      Page {{ pagination.page }} of {{ pagination.total_pages }}
+      <template v-if="pagination.total">
+        Showing <span class="font-medium text-foreground">{{ first }}–{{ last }}</span> of
+        <span class="font-medium text-foreground">{{ pagination.total }}</span>
+      </template>
+      <template v-else>No results</template>
     </p>
-    <div class="flex items-center gap-2">
-      <Link
-        v-if="pagination.page > 1"
-        :href="buildUrl(pagination.page - 1)"
-      >
-        <Button variant="outline" size="sm">
-          <ChevronLeft class="h-4 w-4 mr-1" />
-          Previous
+    <div class="flex items-center gap-6 lg:gap-8">
+      <div class="hidden items-center gap-2 sm:flex">
+        <Label for="rows-per-page" class="text-sm font-medium">Rows per page</Label>
+        <Select :model-value="String(pagination.page_size)" @update:model-value="(size) => go(1, { page_size: Number(size) })">
+          <SelectTrigger id="rows-per-page" class="h-8 w-[70px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent side="top">
+            <SelectItem v-for="size in pageSizes" :key="size" :value="String(size)">{{ size }}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div class="text-sm font-medium">Page {{ pagination.page }} of {{ totalPages }}</div>
+      <div class="flex items-center gap-2">
+        <Button variant="outline" size="icon" class="hidden h-8 w-8 lg:flex" :disabled="pagination.page <= 1" @click="go(1)">
+          <span class="sr-only">First page</span>
+          <ChevronsLeft class="h-4 w-4" />
         </Button>
-      </Link>
-      <Button v-else variant="outline" size="sm" disabled>
-        <ChevronLeft class="h-4 w-4 mr-1" />
-        Previous
-      </Button>
-      <Link
-        v-if="pagination.page < pagination.total_pages"
-        :href="buildUrl(pagination.page + 1)"
-      >
-        <Button variant="outline" size="sm">
-          Next
-          <ChevronRight class="h-4 w-4 ml-1" />
+        <Button variant="outline" size="icon" class="h-8 w-8" :disabled="pagination.page <= 1" @click="go(pagination.page - 1)">
+          <span class="sr-only">Previous page</span>
+          <ChevronLeft class="h-4 w-4" />
         </Button>
-      </Link>
-      <Button v-else variant="outline" size="sm" disabled>
-        Next
-        <ChevronRight class="h-4 w-4 ml-1" />
-      </Button>
+        <Button variant="outline" size="icon" class="h-8 w-8" :disabled="pagination.page >= totalPages" @click="go(pagination.page + 1)">
+          <span class="sr-only">Next page</span>
+          <ChevronRight class="h-4 w-4" />
+        </Button>
+        <Button variant="outline" size="icon" class="hidden h-8 w-8 lg:flex" :disabled="pagination.page >= totalPages" @click="go(totalPages)">
+          <span class="sr-only">Last page</span>
+          <ChevronsRight class="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   </div>
 </template>

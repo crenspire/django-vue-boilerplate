@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from "vue"
-import { Link, usePage } from "@inertiajs/inertia-vue3"
+import { Head, Link, usePage } from "@inertiajs/vue3"
 import { Button } from "@/Components/ui/button"
 import {
   Zap,
@@ -15,7 +15,7 @@ import {
 } from "lucide-vue-next"
 import { useTheme } from "@/composables/useTheme"
 
-const { theme, toggle: toggleTheme } = useTheme()
+const { resolvedTheme: theme, toggle: toggleTheme } = useTheme()
 const page = usePage()
 const isSignedIn = computed(() => !!page.props?.auth?.user)
 
@@ -28,6 +28,7 @@ const features = [
 </script>
 
 <template>
+  <Head title="Home" />
   <div class="min-h-screen flex flex-col bg-background">
     <!-- Header -->
     <header class="sticky top-0 z-50 w-full border-b border-border/50 bg-background/80 backdrop-blur-xl shadow-sm shadow-black/5">
@@ -46,24 +47,15 @@ const features = [
             <Sun v-if="theme === 'light'" class="h-4 w-4" />
             <Moon v-else class="h-4 w-4" />
           </Button>
-          <Link v-if="isSignedIn" href="/admin/">
-            <Button variant="ghost" size="sm" class="text-muted-foreground hover:text-foreground">Admin</Button>
-          </Link>
-          <Link v-else href="/admin/login/">
-            <Button variant="ghost" size="sm" class="text-muted-foreground hover:text-foreground">Sign in</Button>
-          </Link>
-          <Link v-if="isSignedIn" href="/admin/">
-            <Button size="sm" class="gap-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white border-0 shadow-md shadow-violet-500/25">
-              Admin
+          <Button v-if="!isSignedIn" as-child variant="ghost" size="sm" class="text-muted-foreground hover:text-foreground">
+            <Link href="/admin/login/">Sign in</Link>
+          </Button>
+          <Button as-child size="sm" class="gap-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white border-0 shadow-md shadow-violet-500/25">
+            <Link :href="isSignedIn ? '/admin/' : '/admin/login/'">
+              {{ isSignedIn ? "Admin" : "Get started" }}
               <ArrowRight class="h-4 w-4" />
-            </Button>
-          </Link>
-          <Link v-else href="/admin/login/">
-            <Button size="sm" class="gap-1.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white border-0 shadow-md shadow-violet-500/25">
-              Get started
-              <ArrowRight class="h-4 w-4" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </nav>
       </div>
     </header>
@@ -88,18 +80,18 @@ const features = [
           One codebase, one server. Build modern UIs with Vue and shadcn-vue while Django handles routing and auth—no separate SPA or API layer.
         </p>
         <div class="mt-12 flex flex-wrap items-center justify-center gap-4">
-          <Link :href="isSignedIn ? '/admin/' : '/admin/login/'">
-            <Button size="lg" class="gap-2 h-12 px-8 text-base bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white border-0 shadow-lg shadow-violet-500/30 hover:shadow-violet-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all">
+          <Button as-child size="lg" class="gap-2 h-12 px-8 text-base bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white border-0 shadow-lg shadow-violet-500/30 hover:shadow-violet-500/40 hover:scale-[1.02] active:scale-[0.98] transition-all">
+            <Link :href="isSignedIn ? '/admin/' : '/admin/login/'">
               {{ isSignedIn ? 'Open admin' : 'Get started' }}
               <ArrowRight class="h-4 w-4" />
-            </Button>
-          </Link>
-          <a href="https://github.com/crenspire/django-vue-boilerplate" target="_blank" rel="noopener noreferrer" class="inline-flex">
-            <Button variant="outline" size="lg" class="gap-2 h-12 px-8 text-base border-2 hover:border-violet-500/50 hover:bg-violet-500/5 hover:text-foreground transition-all">
+            </Link>
+          </Button>
+          <Button as-child variant="outline" size="lg" class="gap-2 h-12 px-8 text-base border-2 hover:border-violet-500/50 hover:bg-violet-500/5 hover:text-foreground transition-all">
+            <a href="https://github.com/crenspire/django-vue-boilerplate" target="_blank" rel="noopener noreferrer">
               <Github class="h-5 w-5" />
               View on GitHub
-            </Button>
-          </a>
+            </a>
+          </Button>
         </div>
       </div>
     </section>

@@ -1,13 +1,27 @@
 <script setup>
-import { SelectRoot } from "reka-ui"
+import { SelectRoot, useForwardPropsEmits } from "reka-ui";
+
 const props = defineProps({
-  modelValue: { type: String, required: false },
-  defaultValue: { type: String, required: false },
-})
-const emit = defineEmits(["update:modelValue"])
+  open: { type: Boolean, required: false },
+  defaultOpen: { type: Boolean, required: false },
+  defaultValue: { type: null, required: false },
+  modelValue: { type: null, required: false },
+  nullableValue: { type: String, required: false },
+  by: { type: [String, Function], required: false },
+  dir: { type: String, required: false },
+  multiple: { type: Boolean, required: false },
+  autocomplete: { type: String, required: false },
+  disabled: { type: Boolean, required: false },
+  name: { type: String, required: false },
+  required: { type: Boolean, required: false },
+});
+const emits = defineEmits(["update:modelValue", "update:open"]);
+
+const forwarded = useForwardPropsEmits(props, emits);
 </script>
+
 <template>
-  <SelectRoot :model-value="modelValue" :default-value="defaultValue" @update:model-value="emit('update:modelValue', $event)">
+  <SelectRoot v-bind="forwarded">
     <slot />
   </SelectRoot>
 </template>

@@ -1,13 +1,19 @@
 <script setup>
-import { cn } from "@/lib/utils"
-import { alertVariants } from "."
+import { cn } from "@/lib/utils";
+import { alertVariants } from ".";
+
 const props = defineProps({
+  class: {
+    type: [Boolean, null, String, Object, Array],
+    required: false,
+    skipCheck: true,
+  },
   variant: { type: null, required: false },
-  class: { type: null, required: false },
-})
+});
 </script>
+
 <template>
-  <div role="alert" :class="cn(alertVariants({ variant }), props.class)">
+  <div :class="cn(alertVariants({ variant }), props.class)" role="alert">
     <slot />
   </div>
 </template>

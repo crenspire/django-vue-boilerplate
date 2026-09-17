@@ -1,7 +1,9 @@
-from django.contrib.auth.models import Group
+from django.contrib.auth.models import Group, Permission
 from django.db.models import Count, QuerySet
 
+from apps.admin_panel.dto.common import PaginationDTO
 from apps.admin_panel.dto.groups import GroupDetailDTO, GroupListItemDTO
+from apps.admin_panel.selectors.pagination import paginate
 
 
 def get_groups_queryset(
@@ -9,10 +11,11 @@ def get_groups_queryset(
     search: str | None = None,
     order_by: str = "name",
 ) -> QuerySet:
+    # distinct=True: two Counts over different many-to-many joins otherwise multiply each other.
     qs = Group.objects.annotate(
-        user_count=Count("user"),
-        permission_count=Count("permissions"),
-    ).order_by(order_by)
+        user_count=Count("user", distinct=True),
+        permission_count=Count("permissions", distinct=True),
+    ).order_by(order_by, "id")
     if search and search.strip():
         term = search.strip()
         qs = qs.filter(name__icontains=term)
@@ -23,13 +26,10 @@ def get_group_list_page(
     *,
     search: str | None = None,
     order_by: str = "name",
-    page: int = 1,
+    page: int | str | None = 1,
     page_size: int = 25,
-) -> tuple[list[GroupListItemDTO], int]:
-    qs = get_groups_queryset(search=search, order_by=order_by)
-    total = qs.count()
-    start = (page - 1) * page_size
-    rows = qs[start : start + page_size]
+) -> tuple[list[GroupListItemDTO], PaginationDTO]:
+    rows, pagination = paginate(get_groups_queryset(search=search, order_by=order_by), page=page, page_size=page_size)
     items = [
         GroupListItemDTO(
             id=g.id,
@@ -39,7 +39,7 @@ def get_group_list_page(
         )
         for g in rows
     ]
-    return items, total
+    return items, pagination
 
 
 def get_group_by_id(group_id: int) -> Group | None:
@@ -50,8 +50,8 @@ def get_group_detail_dto(group_id: int) -> GroupDetailDTO | None:
     group = get_group_by_id(group_id)
     if not group:
         return None
-    perms = list(group.permissions.all().order_by("content_type__app_label", "codename"))
-    users = list(group.user_set.all().order_by("username"))
+    perms = list(group.permissions.select_related("content_type").order_by("content_type__app_label", "codename"))
+    users = list(group.user_set.order_by("username"))
     return GroupDetailDTO(
         id=group.id,
         name=group.name,
@@ -62,18 +62,30 @@ def get_group_detail_dto(group_id: int) -> GroupDetailDTO | None:
     )
 
 
-def get_groups_choices() -> list[dict]:
-    """Return list of {id, name} for all groups for use in user forms."""
-    return [{"id": g.id, "name": g.name} for g in Group.objects.order_by("name")]
+def get_groups_choices(assignable_ids: set[int] | None = None) -> list[dict]:
+    """
+    Return `{id, name, assignable}` for all groups for use in user forms.
+
+    `assignable_ids=None` means every group is assignable.
+    """
+    return [
+        {"id": g.id, "name": g.name, "assignable": assignable_ids is None or g.id in assignable_ids}
+        for g in Group.objects.order_by("name")
+    ]
 
 
-def get_all_permissions_choices() -> list[tuple[int, str]]:
-    """Return (id, label) for all permissions for use in forms."""
-    from django.contrib.auth.models import Permission
+def get_all_permissions_choices(grantable_ids: set[int] | None = None) -> list[dict]:
+    """
+    Return `{id, codename, assignable}` for all permissions for use in group forms.
 
-    perms = (
-        Permission.objects.select_related("content_type")
-        .order_by("content_type__app_label", "codename")
-        .all()
-    )
-    return [(p.id, f"{p.content_type.app_label}.{p.codename}") for p in perms]
+    `grantable_ids=None` means every permission is grantable.
+    """
+    perms = Permission.objects.select_related("content_type").order_by("content_type__app_label", "codename")
+    return [
+        {
+            "id": p.id,
+            "codename": f"{p.content_type.app_label}.{p.codename}",
+            "assignable": grantable_ids is None or p.id in grantable_ids,
+        }
+        for p in perms
+    ]

@@ -1,11 +1,17 @@
 <script setup>
-import { cn } from "@/lib/utils"
+import { AvatarImage } from "reka-ui";
+
 const props = defineProps({
-  src: { type: String, required: false },
-  alt: { type: String, required: false },
-  class: { type: null, required: false },
-})
+  src: { type: String, required: true },
+  referrerPolicy: { type: null, required: false },
+  crossOrigin: { type: null, required: false },
+  asChild: { type: Boolean, required: false },
+  as: { type: null, required: false },
+});
 </script>
+
 <template>
-  <img v-if="src" :src="src" :alt="alt" :class="cn('aspect-square h-full w-full', props.class)" />
+  <AvatarImage v-bind="props" class="h-full w-full object-cover">
+    <slot />
+  </AvatarImage>
 </template>

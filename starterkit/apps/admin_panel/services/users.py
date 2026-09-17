@@ -1,63 +1,55 @@
-from typing import Dict, List
-
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
+from django.contrib.auth import get_user_model, update_session_auth_hash
+from django.db import IntegrityError, transaction
 from django.http import HttpRequest
 
-from apps.admin_panel.domain.policies import can_manage_users
-from apps.admin_panel.dto.users import (
-    UserFormInputDTO,
-    UserFormResultDTO,
-)
+from apps.admin_panel.domain.policies import can_add_users, can_delete_user, can_edit_user
+from apps.admin_panel.dto.users import UserFormInputDTO, UserFormResultDTO
+from apps.admin_panel.forms.errors import form_errors
+from apps.admin_panel.forms.users import UserAdminForm
 from apps.admin_panel.selectors.users import get_user_by_id
 
 User = get_user_model()
 
 
-def _check_permission(request: HttpRequest) -> UserFormResultDTO | None:
-    if not can_manage_users(request.user):
+def _failure(message: str) -> UserFormResultDTO:
+    return UserFormResultDTO(success=False, user_id=None, errors={"non_field_errors": [message]})
+
+
+def _form_data(dto: UserFormInputDTO) -> dict:
+    return {
+        "username": dto.username,
+        "email": dto.email,
+        "first_name": dto.first_name,
+        "last_name": dto.last_name,
+        "is_staff": dto.is_staff,
+        "is_superuser": dto.is_superuser,
+        "is_active": dto.is_active,
+        "groups": dto.group_ids,
+        "password": dto.password or "",
+    }
+
+
+def _save(form: UserAdminForm) -> UserFormResultDTO:
+    if not form.is_valid():
+        return UserFormResultDTO(success=False, user_id=None, errors=form_errors(form, {"groups": "group_ids"}))
+    try:
+        with transaction.atomic():
+            user = form.save()
+    except IntegrityError:
+        # Lost a race against a concurrent save with the same username.
         return UserFormResultDTO(
             success=False,
             user_id=None,
-            errors={"non_field_errors": ["Permission denied."]},
+            errors={"username": ["A user with that username already exists."]},
         )
-    return None
+    return UserFormResultDTO(success=True, user_id=user.id, errors={})
 
 
 def create_user_service(dto: UserFormInputDTO, request: HttpRequest) -> UserFormResultDTO:
-    denied = _check_permission(request)
-    if denied:
-        return denied
+    if not can_add_users(request.user):
+        return _failure("Permission denied.")
 
-    errors: Dict[str, List[str]] = {}
-
-    if not (dto.username or "").strip():
-        errors.setdefault("username", []).append("This field is required.")
-    if User.objects.filter(username=(dto.username or "").strip()).exists():
-        errors.setdefault("username", []).append("A user with that username already exists.")
-
-    if dto.password is None or (isinstance(dto.password, str) and len(dto.password) < 1):
-        errors.setdefault("password", []).append("This field is required.")
-
-    if errors:
-        return UserFormResultDTO(success=False, user_id=None, errors=errors)
-
-    user = User()
-    user.username = (dto.username or "").strip()
-    user.email = (dto.email or "").strip()
-    user.first_name = (dto.first_name or "").strip()
-    user.last_name = (dto.last_name or "").strip()
-    user.is_staff = bool(dto.is_staff)
-    user.is_superuser = bool(dto.is_superuser)
-    user.is_active = bool(dto.is_active)
-    if dto.password:
-        user.set_password(dto.password)
-    user.save()
-
-    group_ids = getattr(dto, "group_ids", []) or []
-    user.groups.set(Group.objects.filter(pk__in=group_ids))
-
-    return UserFormResultDTO(success=True, user_id=user.id, errors={})
+    return _save(UserAdminForm(data=_form_data(dto), actor=request.user))
 
 
 def update_user_service(
@@ -65,58 +57,28 @@ def update_user_service(
     dto: UserFormInputDTO,
     request: HttpRequest,
 ) -> UserFormResultDTO:
-    denied = _check_permission(request)
-    if denied:
-        return denied
-
     user = get_user_by_id(user_id)
     if not user:
-        return UserFormResultDTO(
-            success=False,
-            user_id=None,
-            errors={"non_field_errors": ["User not found."]},
-        )
+        return _failure("User not found.")
+    if not can_edit_user(request.user, user):
+        return _failure("Permission denied.")
 
-    errors: Dict[str, List[str]] = {}
+    result = _save(UserAdminForm(data=_form_data(dto), instance=user, actor=request.user))
 
-    username = (dto.username or "").strip()
-    if not username:
-        errors.setdefault("username", []).append("This field is required.")
-    if User.objects.filter(username=username).exclude(pk=user_id).exists():
-        errors.setdefault("username", []).append("A user with that username already exists.")
-
-    if errors:
-        return UserFormResultDTO(success=False, user_id=None, errors=errors)
-
-    user.username = username
-    user.email = (dto.email or "").strip()
-    user.first_name = (dto.first_name or "").strip()
-    user.last_name = (dto.last_name or "").strip()
-    user.is_staff = bool(dto.is_staff)
-    user.is_superuser = bool(dto.is_superuser)
-    user.is_active = bool(dto.is_active)
-    if dto.password is not None and dto.password != "":
-        user.set_password(dto.password)
-    user.save()
-
-    group_ids = getattr(dto, "group_ids", []) or []
-    user.groups.set(Group.objects.filter(pk__in=group_ids))
-
-    return UserFormResultDTO(success=True, user_id=user.id, errors={})
+    if result.success and dto.password and user.pk == request.user.pk:
+        # Keep the current session valid after changing your own password.
+        update_session_auth_hash(request, user)
+    return result
 
 
 def delete_user_service(user_id: int, request: HttpRequest) -> UserFormResultDTO:
-    denied = _check_permission(request)
-    if denied:
-        return denied
-
     user = get_user_by_id(user_id)
     if not user:
-        return UserFormResultDTO(
-            success=False,
-            user_id=None,
-            errors={"non_field_errors": ["User not found."]},
-        )
+        return _failure("User not found.")
+    if user.pk == request.user.pk:
+        return _failure("You cannot delete your own account.")
+    if not can_delete_user(request.user, user):
+        return _failure("Permission denied.")
 
     user.delete()
     return UserFormResultDTO(success=True, user_id=None, errors={})

@@ -1,26 +1,26 @@
 <script setup>
-import { computed } from "vue"
+import { computed, ref } from "vue"
+import { Link, router, usePage } from "@inertiajs/vue3"
+import { CircleCheck, CircleDashed, MoreHorizontal, Pencil, Plus, ShieldCheck, Trash2, UserRound, Users } from "lucide-vue-next"
 import AdminLayout from "@/Layouts/AdminLayout.vue"
-import { Button } from "@/Components/ui/button"
 import { Badge } from "@/Components/ui/badge"
-import { Card, CardContent } from "@/Components/ui/card"
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/Components/ui/table"
-import { Alert, AlertDescription } from "@/Components/ui/alert"
+import { Button } from "@/Components/ui/button"
 import {
   DropdownMenu,
-  DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/Components/ui/dropdown-menu"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/Components/ui/table"
+import DataTablePagination from "@/Components/admin/DataTablePagination.vue"
+import DeleteConfirmDialog from "@/Components/admin/DeleteConfirmDialog.vue"
 import PageHeader from "@/Components/admin/PageHeader.vue"
 import SearchBar from "@/Components/admin/SearchBar.vue"
 import SortableHeader from "@/Components/admin/SortableHeader.vue"
-import DataTablePagination from "@/Components/admin/DataTablePagination.vue"
-import DeleteConfirmDialog from "@/Components/admin/DeleteConfirmDialog.vue"
-import { Link, useForm } from "@inertiajs/inertia-vue3"
-import { Inertia } from "@inertiajs/inertia"
-import { Plus, MoreHorizontal, Pencil, Trash2, AlertCircle } from "lucide-vue-next"
+import UserAvatar from "@/Components/admin/UserAvatar.vue"
+import { useListQuery } from "@/composables/useListQuery"
+import { displayName, formatDate, timeAgo } from "@/lib/format"
 
 defineOptions({ layout: AdminLayout })
 
@@ -28,142 +28,144 @@ const props = defineProps({
   users: { type: Array, default: () => [] },
   pagination: { type: Object, required: true },
   filters: { type: Object, default: () => ({}) },
-  errors: { type: Object, default: () => ({}) },
 })
 
-const searchForm = useForm({
-  search: props.filters?.search ?? "",
+const page = usePage()
+const can = computed(() => page.props.auth?.user?.permissions ?? {})
+const { search, orderBy, doSearch, clearSearch, sort, pageUrl } = useListQuery("/admin/users/", props, "username")
+
+// A single dialog outside the dropdown menus (menu content unmounts on close).
+const pendingDelete = ref(null)
+const confirmOpen = computed({
+  get: () => pendingDelete.value !== null,
+  set: (open) => {
+    if (!open) pendingDelete.value = null
+  },
 })
-
-const currentOrderBy = computed(() => props.filters?.order_by ?? "username")
-
-function doSearch() {
-  Inertia.get("/admin/users/", { search: searchForm.search, order_by: currentOrderBy.value }, { preserveState: true })
-}
-
-function clearSearch() {
-  Inertia.get("/admin/users/", { order_by: currentOrderBy.value }, { preserveState: true })
-}
-
-function onSort(orderBy) {
-  Inertia.get("/admin/users/", { search: props.filters?.search || "", order_by: orderBy }, { preserveState: true })
-}
-
-function buildPageUrl(page) {
-  const params = new URLSearchParams()
-  if (props.filters?.search) params.set("search", props.filters.search)
-  if (currentOrderBy.value) params.set("order_by", currentOrderBy.value)
-  params.set("page", page)
-  return `/admin/users/?${params.toString()}`
-}
 </script>
 
 <template>
-  <div class="space-y-6">
-    <PageHeader title="Users">
+  <div class="flex flex-col gap-6">
+    <PageHeader title="Users" description="Manage accounts, their status and group membership.">
       <template #actions>
-        <Link href="/admin/users/create/">
-          <Button>
-            <Plus class="h-4 w-4 mr-2" />
+        <Button v-if="can.add_users" as-child size="sm">
+          <Link href="/admin/users/create/">
+            <Plus class="h-4 w-4" />
             Add user
-          </Button>
-        </Link>
+          </Link>
+        </Button>
       </template>
     </PageHeader>
 
-    <Alert v-if="errors?.non_field_errors?.length" variant="destructive">
-      <AlertCircle class="h-4 w-4" />
-      <AlertDescription>
-        <span v-for="(msg, i) in errors.non_field_errors" :key="i">{{ msg }}</span>
-      </AlertDescription>
-    </Alert>
+    <div class="flex flex-col gap-4">
+      <div class="flex items-center justify-between gap-2">
+        <SearchBar v-model="search" placeholder="Search name, username or email…" @search="doSearch" @clear="clearSearch" />
+      </div>
 
-    <Card>
-      <CardContent class="pt-6">
-        <div class="space-y-4">
-          <SearchBar
-            v-model="searchForm.search"
-            placeholder="Search username or email..."
-            @search="doSearch"
-            @clear="clearSearch"
-          />
-
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>
-                  <SortableHeader field="username" :current-order-by="currentOrderBy" label="Username" @sort="onSort" />
-                </TableHead>
-                <TableHead>
-                  <SortableHeader field="email" :current-order-by="currentOrderBy" label="Email" @sort="onSort" />
-                </TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead class="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-if="!users.length">
-                <TableCell colspan="5" class="text-center text-muted-foreground py-8">
-                  No users found.
-                </TableCell>
-              </TableRow>
-              <TableRow v-for="u in users" :key="u.id">
-                <TableCell class="font-medium">
-                  <Link :href="`/admin/users/${u.id}/edit/`" class="hover:underline">
-                    {{ u.username }}
-                  </Link>
-                </TableCell>
-                <TableCell class="text-muted-foreground">{{ u.email || "-" }}</TableCell>
-                <TableCell>
-                  <Badge v-if="u.is_active" variant="outline" class="border-green-200 bg-green-50 text-green-700">
-                    Active
-                  </Badge>
-                  <Badge v-else variant="outline" class="border-red-200 bg-red-50 text-red-700">
-                    Inactive
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <div class="flex gap-1">
-                    <Badge v-if="u.is_superuser" variant="default">superuser</Badge>
-                    <Badge v-else-if="u.is_staff" variant="secondary">staff</Badge>
+      <div class="overflow-hidden rounded-lg border">
+        <Table>
+          <TableHeader class="bg-muted/50">
+            <TableRow class="hover:bg-transparent">
+              <TableHead class="pl-4">
+                <SortableHeader field="username" :current-order-by="orderBy" label="User" @sort="sort" />
+              </TableHead>
+              <TableHead>
+                <SortableHeader field="is_active" :current-order-by="orderBy" label="Status" @sort="sort" />
+              </TableHead>
+              <TableHead class="hidden md:table-cell">Role</TableHead>
+              <TableHead class="hidden lg:table-cell">
+                <SortableHeader field="date_joined" :current-order-by="orderBy" label="Joined" @sort="sort" />
+              </TableHead>
+              <TableHead class="hidden lg:table-cell">
+                <SortableHeader field="last_login" :current-order-by="orderBy" label="Last login" @sort="sort" />
+              </TableHead>
+              <TableHead class="w-12"><span class="sr-only">Actions</span></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <TableRow v-if="!users.length" class="hover:bg-transparent">
+              <TableCell colspan="6" class="h-48">
+                <div class="flex flex-col items-center justify-center gap-2 text-center">
+                  <div class="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+                    <Users class="h-5 w-5 text-muted-foreground" />
                   </div>
-                </TableCell>
-                <TableCell class="text-right">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger>
-                      <Button variant="ghost" size="icon-sm">
-                        <MoreHorizontal class="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem class="cursor-pointer" @click="Inertia.visit(`/admin/users/${u.id}/edit/`)">
-                        <Pencil class="h-4 w-4 mr-2" />
-                        Edit
+                  <p class="text-sm font-medium">No users found</p>
+                  <p class="text-sm text-muted-foreground">
+                    {{ filters.search ? "Try a different search term." : "Create the first user to get started." }}
+                  </p>
+                </div>
+              </TableCell>
+            </TableRow>
+            <TableRow v-for="u in users" :key="u.id">
+              <TableCell class="pl-4">
+                <div class="flex items-center gap-3">
+                  <UserAvatar :user="u" class="h-9 w-9" />
+                  <div class="grid min-w-0 leading-tight">
+                    <Link v-if="u.can_edit" :href="`/admin/users/${u.id}/edit/`" class="truncate font-medium hover:underline">
+                      {{ displayName(u) }}
+                    </Link>
+                    <span v-else class="truncate font-medium">{{ displayName(u) }}</span>
+                    <span class="truncate text-xs text-muted-foreground">
+                      {{ u.full_name ? `@${u.username}` : "" }}{{ u.full_name && u.email ? " · " : "" }}{{ u.email }}
+                    </span>
+                  </div>
+                </div>
+              </TableCell>
+              <TableCell>
+                <Badge variant="outline" class="gap-1 px-1.5 font-normal text-muted-foreground">
+                  <CircleCheck v-if="u.is_active" class="h-3.5 w-3.5 fill-success text-background" />
+                  <CircleDashed v-else class="h-3.5 w-3.5" />
+                  {{ u.is_active ? "Active" : "Inactive" }}
+                </Badge>
+              </TableCell>
+              <TableCell class="hidden md:table-cell">
+                <span class="inline-flex items-center gap-1.5 text-sm">
+                  <ShieldCheck v-if="u.is_superuser" class="h-4 w-4 text-muted-foreground" />
+                  <UserRound v-else class="h-4 w-4 text-muted-foreground" />
+                  {{ u.is_superuser ? "Superuser" : u.is_staff ? "Staff" : "Member" }}
+                </span>
+              </TableCell>
+              <TableCell class="hidden text-muted-foreground lg:table-cell" :title="formatDate(u.date_joined)">
+                {{ formatDate(u.date_joined) }}
+              </TableCell>
+              <TableCell class="hidden text-muted-foreground lg:table-cell">
+                {{ timeAgo(u.last_login) }}
+              </TableCell>
+              <TableCell class="pr-4 text-right">
+                <DropdownMenu v-if="u.can_edit || u.can_delete">
+                  <DropdownMenuTrigger as-child>
+                    <Button variant="ghost" size="icon" class="h-8 w-8 text-muted-foreground data-[state=open]:bg-muted" :aria-label="`Actions for ${u.username}`">
+                      <MoreHorizontal class="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" class="w-36">
+                    <DropdownMenuItem v-if="u.can_edit" @select="router.visit(`/admin/users/${u.id}/edit/`)">
+                      <Pencil />
+                      Edit
+                    </DropdownMenuItem>
+                    <template v-if="u.can_delete">
+                      <DropdownMenuSeparator v-if="u.can_edit" />
+                      <DropdownMenuItem class="text-destructive focus:text-destructive" @select="pendingDelete = u">
+                        <Trash2 />
+                        Delete
                       </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DeleteConfirmDialog
-                        :delete-url="`/admin/users/${u.id}/delete/`"
-                        title="Delete user"
-                        :description="`Are you sure you want to delete '${u.username}'? This action cannot be undone.`"
-                      >
-                        <template #default="{ open }">
-                          <DropdownMenuItem class="text-destructive cursor-pointer" @click="open">
-                            <Trash2 class="h-4 w-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </template>
-                      </DeleteConfirmDialog>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
+                    </template>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      </div>
 
-          <DataTablePagination :pagination="pagination" :build-url="buildPageUrl" />
-        </div>
-      </CardContent>
-    </Card>
+      <DataTablePagination :pagination="pagination" :build-url="pageUrl" />
+    </div>
+
+    <DeleteConfirmDialog
+      v-model:open="confirmOpen"
+      :delete-url="pendingDelete ? `/admin/users/${pendingDelete.id}/delete/` : null"
+      title="Delete user?"
+      :description="`This permanently deletes '${pendingDelete?.username ?? ''}' and removes them from all groups. This action cannot be undone.`"
+    />
   </div>
 </template>

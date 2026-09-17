@@ -1,21 +1,16 @@
 import { createApp, h } from "vue"
-import { createInertiaApp } from "@inertiajs/inertia-vue3"
-import axios from "axios"
+import { createInertiaApp } from "@inertiajs/vue3"
+import { applyStoredTheme } from "@/composables/useTheme"
+import "@fontsource-variable/geist"
 import "./main.css"
 
-// Apply saved theme before first paint to avoid flash
-const savedTheme = typeof localStorage !== "undefined" ? localStorage.getItem("admin-theme") : null
-if (savedTheme === "dark") document.documentElement.classList.add("dark")
-else document.documentElement.classList.remove("dark")
+// Apply the saved (or system) theme before the first paint to avoid a flash.
+applyStoredTheme()
 
-// Configure Axios to send Django CSRF token with all requests
-axios.defaults.xsrfCookieName = "csrftoken"
-axios.defaults.xsrfHeaderName = "X-CSRFToken"
-
-// Eagerly register all page components with Vite's glob import
 const pages = import.meta.glob("./Pages/**/*.vue")
 
 createInertiaApp({
+  title: (title) => (title ? `${title} · Django Inertia Vue` : "Django Inertia Vue"),
   resolve: (name) => {
     const importPage = pages[`./Pages/${name}.vue`]
     if (!importPage) {
@@ -27,5 +22,10 @@ createInertiaApp({
     createApp({ render: () => h(App, props) })
       .use(plugin)
       .mount(el)
+  },
+  // Django's default CSRF cookie/header names (Inertia defaults to Laravel's).
+  http: {
+    xsrfCookieName: "csrftoken",
+    xsrfHeaderName: "X-CSRFToken",
   },
 })
